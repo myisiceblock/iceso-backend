@@ -1,5 +1,7 @@
 package com.yupi.springbootinit.service.impl;
 
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -22,29 +24,34 @@ import com.yupi.springbootinit.model.vo.UserVO;
 import com.yupi.springbootinit.service.PostService;
 import com.yupi.springbootinit.service.UserService;
 import com.yupi.springbootinit.utils.SqlUtils;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+
+import java.util.*;
 import java.util.stream.Collectors;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.poi.ss.formula.functions.T;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
 import org.elasticsearch.search.sort.SortBuilder;
 import org.elasticsearch.search.sort.SortBuilders;
 import org.elasticsearch.search.sort.SortOrder;
+import org.elasticsearch.search.suggest.SuggestBuilder;
+import org.elasticsearch.search.suggest.completion.CompletionSuggestionBuilder;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.core.ElasticsearchRestTemplate;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.elasticsearch.core.query.NativeSearchQuery;
 import org.springframework.data.elasticsearch.core.query.NativeSearchQueryBuilder;
+import org.springframework.data.elasticsearch.core.suggest.response.CompletionSuggestion;
+import org.springframework.data.elasticsearch.core.suggest.response.Suggest;
 import org.springframework.stereotype.Service;
 
 /**
@@ -198,11 +205,12 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
             sortBuilder = SortBuilders.fieldSort(sortField);
             sortBuilder.order(CommonConstant.SORT_ORDER_ASC.equals(sortOrder) ? SortOrder.ASC : SortOrder.DESC);
         }
+        HighlightBuilder highlightBuilder = new HighlightBuilder().field("content").preTags("<strong style=\"color: #16b998\">").postTags("</strong>");
         // 分页
         PageRequest pageRequest = PageRequest.of((int) current, (int) pageSize);
         // 构造查询
         NativeSearchQuery searchQuery = new NativeSearchQueryBuilder().withQuery(boolQueryBuilder)
-                .withPageable(pageRequest).withSorts(sortBuilder).build();
+                .withPageable(pageRequest).withHighlightBuilder(highlightBuilder).withSorts(sortBuilder).build();
         SearchHits<PostEsDTO> searchHits = elasticsearchRestTemplate.search(searchQuery, PostEsDTO.class);
         Page<Post> page = new Page<>();
         page.setTotal(searchHits.getTotalHits());
@@ -210,6 +218,17 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
         // 查出结果后，从 db 获取最新动态数据（比如点赞数）
         if (searchHits.hasSearchHits()) {
             List<SearchHit<PostEsDTO>> searchHitList = searchHits.getSearchHits();
+            HashMap<Long, String> postIdContentHighLight = new HashMap<>();
+            searchHitList.stream().forEach(searchHit -> {
+                Long postId = searchHit.getContent().getId();
+                List<String> highlightFields = searchHit.getHighlightField("content");
+                if (CollectionUtils.isNotEmpty(highlightFields)) {
+                    String contentHighLight = highlightFields.get(0);
+                    if (StrUtil.isNotBlank(contentHighLight)) {
+                        postIdContentHighLight.put(postId, contentHighLight);
+                    }
+                }
+            });
             List<Long> postIdList = searchHitList.stream().map(searchHit -> searchHit.getContent().getId())
                     .collect(Collectors.toList());
             List<Post> postList = baseMapper.selectBatchIds(postIdList);
@@ -217,7 +236,12 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
                 Map<Long, List<Post>> idPostMap = postList.stream().collect(Collectors.groupingBy(Post::getId));
                 postIdList.forEach(postId -> {
                     if (idPostMap.containsKey(postId)) {
-                        resourceList.add(idPostMap.get(postId).get(0));
+                        Post post = idPostMap.get(postId).get(0);
+                        String contentHighLight = postIdContentHighLight.get(postId);
+                        if (StrUtil.isNotBlank(contentHighLight)) {
+                            post.setContent(contentHighLight);
+                        }
+                        resourceList.add(post);
                     } else {
                         // 从 es 清空 db 已物理删除的数据
                         String delete = elasticsearchRestTemplate.delete(String.valueOf(postId), PostEsDTO.class);
@@ -309,6 +333,59 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
         return postVOPage;
     }
 
+    @Override
+    public Page<PostVO> listPostVOByPage(PostQueryRequest postQueryRequest, HttpServletRequest request) {
+        long current = postQueryRequest.getCurrent();
+        long size = postQueryRequest.getPageSize();
+        Page<Post> postPage = this.page(new Page<>(current, size),
+                this.getQueryWrapper(postQueryRequest));
+        return this.getPostVOPage(postPage, request);
+    }
+
+    @Override
+    public List<String> getSearchPrompt(String keyword) {
+
+        @Data
+        class Temp {
+            Float score;
+            String text;
+
+            public Temp(Float score, String text) {
+                this.score = score;
+                this.text = text;
+            }
+        }
+
+        SuggestBuilder suggestBuilder = new SuggestBuilder()
+                .addSuggestion("suggestionTitle", new CompletionSuggestionBuilder("titleSuggestion").prefix(keyword));
+        NativeSearchQuery searchQuery = new NativeSearchQueryBuilder().withSuggestBuilder(suggestBuilder).build();
+
+        HashSet<Temp> temps = new HashSet<>();
+        SearchHits<PostEsDTO> searchHits = elasticsearchRestTemplate.search(searchQuery, PostEsDTO.class);
+        List<Suggest.Suggestion<? extends Suggest.Suggestion.Entry<? extends Suggest.Suggestion.Entry.Option>>> suggestions =
+                searchHits.getSuggest().getSuggestions();
+        for (int i = 0; i < suggestions.size(); i++) {
+            CompletionSuggestion<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>> suggestion =
+                    (CompletionSuggestion<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>>) suggestions.get(i);
+
+            List<CompletionSuggestion.Entry<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>>> entries =
+                    suggestion.getEntries();
+
+            for (CompletionSuggestion.Entry<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>> entry : entries) {
+                List<CompletionSuggestion.Entry.Option<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>>> options = entry.getOptions();
+                for (CompletionSuggestion.Entry.Option<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>> option : options) {
+                    float score = option.getScore();
+                    SearchHit<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>> searchHit = option.getSearchHit();
+                    Object content = searchHit.getContent();
+                    PostEsDTO postEsDTO = new JSONObject(content).toBean(PostEsDTO.class);
+                    temps.add(new Temp(score,postEsDTO.getTitle()));
+                }
+            }
+        }
+        System.out.println(temps);
+        List<String> suggestionText = temps.stream().map(Temp::getText).collect(Collectors.toList());
+        return suggestionText;
+    }
 }
 
 

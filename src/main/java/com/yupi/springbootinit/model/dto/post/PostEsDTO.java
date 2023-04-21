@@ -1,27 +1,30 @@
 package com.yupi.springbootinit.model.dto.post;
 
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.extra.pinyin.PinyinUtil;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.Gson;
 import com.yupi.springbootinit.model.entity.Post;
+
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+
 import lombok.Data;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.elasticsearch.annotations.Document;
 import org.springframework.data.elasticsearch.annotations.Field;
 import org.springframework.data.elasticsearch.annotations.FieldType;
+import org.springframework.data.elasticsearch.core.suggest.Completion;
 
 /**
  * 帖子 ES 包装类
- *
- * @author <a href="https://github.com/liyupi">程序员鱼皮</a>
- * @from <a href="https://yupi.icu">编程导航知识星球</a>
  **/
-// todo 取消注释开启 ES（须先配置 ES）
-//@Document(indexName = "post")
+@Document(indexName = "post")
 @Data
 public class PostEsDTO implements Serializable {
 
@@ -57,6 +60,11 @@ public class PostEsDTO implements Serializable {
      * 收藏数
      */
     private Integer favourNum;
+
+
+    private List<String> titleSuggestion;
+
+    private List<String> contentSuggestion;
 
     /**
      * 创建用户 id
@@ -96,6 +104,29 @@ public class PostEsDTO implements Serializable {
         }
         PostEsDTO postEsDTO = new PostEsDTO();
         BeanUtils.copyProperties(post, postEsDTO);
+        String title = postEsDTO.getTitle();
+        ArrayList<String> titleSuggestion = new ArrayList<String>() {
+            {
+                add(title);
+                add(PinyinUtil.getPinyin(title).replace(" ", ""));
+            }
+        };
+        postEsDTO.setTitleSuggestion(titleSuggestion);
+
+        String content = postEsDTO.getContent();
+        ArrayList<String> contentSuggestion = new ArrayList<String>() {
+            {
+                if (StrUtil.isNotBlank(content) && content.length() > 20) {
+                    add(content.substring(0, 20));
+                } else {
+                    add(content);
+                }
+
+            }
+        };
+        postEsDTO.setContentSuggestion(contentSuggestion);
+
+
         String tagsStr = post.getTags();
         if (StringUtils.isNotBlank(tagsStr)) {
             postEsDTO.setTags(GSON.fromJson(tagsStr, new TypeToken<List<String>>() {
