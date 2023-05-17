@@ -24,18 +24,11 @@ import com.yupi.springbootinit.model.vo.UserVO;
 import com.yupi.springbootinit.service.PostService;
 import com.yupi.springbootinit.service.UserService;
 import com.yupi.springbootinit.utils.SqlUtils;
-
-import java.util.*;
-import java.util.stream.Collectors;
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
-
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.poi.ss.formula.functions.T;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
@@ -53,6 +46,11 @@ import org.springframework.data.elasticsearch.core.query.NativeSearchQueryBuilde
 import org.springframework.data.elasticsearch.core.suggest.response.CompletionSuggestion;
 import org.springframework.data.elasticsearch.core.suggest.response.Suggest;
 import org.springframework.stereotype.Service;
+
+import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 帖子服务实现
@@ -356,29 +354,30 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
             }
         }
 
-        SuggestBuilder suggestBuilder = new SuggestBuilder()
-                .addSuggestion("suggestionTitle", new CompletionSuggestionBuilder("titleSuggestion").prefix(keyword));
-        NativeSearchQuery searchQuery = new NativeSearchQueryBuilder().withSuggestBuilder(suggestBuilder).build();
-
+        SuggestBuilder suggestBuilder = new SuggestBuilder().addSuggestion("suggestionTitle", new
+                CompletionSuggestionBuilder("titleSuggestion").prefix(keyword));
+        NativeSearchQuery searchQuery = new
+                NativeSearchQueryBuilder()
+                .withSuggestBuilder(suggestBuilder).build();
         HashSet<Temp> temps = new HashSet<>();
-        SearchHits<PostEsDTO> searchHits = elasticsearchRestTemplate.search(searchQuery, PostEsDTO.class);
-        List<Suggest.Suggestion<? extends Suggest.Suggestion.Entry<? extends Suggest.Suggestion.Entry.Option>>> suggestions =
+        SearchHits<PostEsDTO> searchHits =
+                elasticsearchRestTemplate.search(searchQuery, PostEsDTO.class);
+        List<Suggest.Suggestion<? extends Suggest.Suggestion.Entry<?
+                extends Suggest.Suggestion.Entry.Option>>> suggestions =
                 searchHits.getSuggest().getSuggestions();
         for (int i = 0; i < suggestions.size(); i++) {
-            CompletionSuggestion<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>> suggestion =
+            CompletionSuggestion<CompletionSuggestion.Entry<CompletionSuggestion.
+                    Entry.Option>> suggestion =
                     (CompletionSuggestion<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>>) suggestions.get(i);
-
-            List<CompletionSuggestion.Entry<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>>> entries =
-                    suggestion.getEntries();
-
+            List<CompletionSuggestion.Entry<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>>> entries = suggestion.getEntries();
             for (CompletionSuggestion.Entry<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>> entry : entries) {
                 List<CompletionSuggestion.Entry.Option<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>>> options = entry.getOptions();
                 for (CompletionSuggestion.Entry.Option<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>> option : options) {
                     float score = option.getScore();
-                    SearchHit<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>> searchHit = option.getSearchHit();
-                    Object content = searchHit.getContent();
+                    SearchHit<CompletionSuggestion.Entry<CompletionSuggestion.Entry.Option>> searchHit1 = option.getSearchHit();
+                    Object content = searchHit1.getContent();
                     PostEsDTO postEsDTO = new JSONObject(content).toBean(PostEsDTO.class);
-                    temps.add(new Temp(score,postEsDTO.getTitle()));
+                    temps.add(new Temp(score, postEsDTO.getTitle()));
                 }
             }
         }
@@ -386,6 +385,7 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
         List<String> suggestionText = temps.stream().map(Temp::getText).collect(Collectors.toList());
         return suggestionText;
     }
+
 }
 
 

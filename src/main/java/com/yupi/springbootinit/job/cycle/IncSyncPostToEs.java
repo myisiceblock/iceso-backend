@@ -41,9 +41,7 @@ public class IncSyncPostToEs {
             log.info("no inc post");
             return;
         }
-        List<PostEsDTO> postEsDTOList = postList.stream()
-                .map(PostEsDTO::objToDto)
-                .collect(Collectors.toList());
+        List<PostEsDTO> postEsDTOList = postList.stream().map(PostEsDTO::objToDto).collect(Collectors.toList());
         final int pageSize = 500;
         int total = postEsDTOList.size();
         log.info("IncSyncPostToEs start, total {}", total);

@@ -32,6 +32,10 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -69,14 +73,29 @@ public class PictureServiceImpl implements PictureService {
             String title = element.select(".inflnk").get(0).attr("aria-label");
             Picture picture = new Picture();
             picture.setTitle(title);
-            picture.setUrl(murl);
-            pictureList.add(picture);
-            if (pictureList.size() >= pageSize) {
-                break;
+            if(isUrlAccessible(murl)) {
+                picture.setUrl(murl);
+                pictureList.add(picture);
+                if (pictureList.size() >= pageSize) {
+                    break;
+                }
             }
         }
         Page<Picture> picturePage = new Page<>(pageNum, pageSize);
         picturePage.setRecords(pictureList);
         return picturePage;
+    }
+
+    @Override
+    public boolean isUrlAccessible(String urlStr) {
+        try {
+            URL url = new URL(urlStr);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("HEAD");
+            int responseCode = connection.getResponseCode();
+            return responseCode == HttpURLConnection.HTTP_OK;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

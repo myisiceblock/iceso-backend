@@ -14,4 +14,6 @@ import java.util.List;
 public interface PictureService {
 
     Page<Picture> searchPicture(String searchText, long pageNum, long pageSize);
+
+    boolean isUrlAccessible(String urlStr);
 }

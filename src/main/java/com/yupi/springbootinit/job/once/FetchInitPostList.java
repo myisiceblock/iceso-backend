@@ -4,12 +4,10 @@ import cn.hutool.http.HttpRequest;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
-import com.yupi.springbootinit.esdao.PostEsDao;
 import com.yupi.springbootinit.model.entity.Post;
 import com.yupi.springbootinit.service.PostService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
-import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
@@ -20,7 +18,7 @@ import java.util.Map;
  * 获得初始数据
  */
 // 取消注释后，每次启动 SpringBoot 项目时会执行一次 run 方法
-@Component
+//@Component
 @Slf4j
 public class FetchInitPostList implements CommandLineRunner {
 
